@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - build.sh
+      - .github/workflows/release.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zstd unzip
+
+      - name: Build tarball
+        run: ./build.sh
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(cat dist/tag)"
+          notes="$RUNNER_TEMP/notes.md"
+          {
+            echo "ONNX Runtime ${tag#v} for linux-x64."
+            echo
+            echo "Built from the conda-forge recipe with telemetry disabled."
+            echo "See PROVENANCE in the tarball for the pinned source packages."
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+          } >"$notes"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/*.tar.gz dist/SHA256SUMS --clobber
+            gh release edit "$tag" --notes-file "$notes"
+          else
+            gh release create "$tag" dist/*.tar.gz dist/SHA256SUMS \
+              --title "onnxruntime ${tag#v} (linux-x64)" \
+              --notes-file "$notes"
+          fi
